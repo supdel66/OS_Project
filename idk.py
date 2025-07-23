@@ -3,11 +3,20 @@ import mediapipe as mp
 import os
 import time
 import threading
+import argparse
 from glob import glob
+
+# Add argument parser at the top
+parser = argparse.ArgumentParser()
+parser.add_argument('--camera', type=str, default='0',
+                   help='Camera URL (e.g., http://192.168.0.102:8080/video)')
+args = parser.parse_args()
 
 MEMES_DIR = "memes"
 SLIDES_DIR = "slides"
 SWITCH_DELAY = 0.1
+PREVIEW_WIDTH = 320  # Preview window width
+PREVIEW_HEIGHT = 240  # Preview window height
 
 # Load images
 meme_imgs = sorted(glob(os.path.join(MEMES_DIR, "*.jpg")) + glob(os.path.join(MEMES_DIR, "*.png")))
@@ -27,9 +36,24 @@ meme_imgs_cv = [cv2.imread(img) for img in meme_imgs]
 slide_imgs_cv = [cv2.imread(img) for img in slide_imgs]
 print("✅ Images loaded!")
 
-cap = cv2.VideoCapture(0)
+# Replace the camera initialization
+if args.camera.isdigit():
+    cap = cv2.VideoCapture(int(args.camera))
+else:
+    # For IP webcam
+    cap = cv2.VideoCapture(args.camera)
+    
+if not cap.isOpened():
+    raise RuntimeError("Failed to open camera! Check IP address or connection.")
+
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh()
+# Optimize face detection for performance
+face_mesh = mp_face_mesh.FaceMesh(
+    max_num_faces=1,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+    refine_landmarks=False
+)
 
 last_state = None
 last_switch = time.time()
@@ -69,6 +93,9 @@ while True:
     if not ret:
         continue
 
+    # Resize camera preview to smaller size
+    preview_frame = cv2.resize(frame, (PREVIEW_WIDTH, PREVIEW_HEIGHT))
+
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(rgb)
 
@@ -97,7 +124,9 @@ while True:
         cv2.imshow("Display", display_img_resized)
 
     # Optional: show camera preview in a small window
-    cv2.imshow("Camera", frame)
+    cv2.namedWindow("Camera", cv2.WINDOW_NORMAL)
+    cv2.moveWindow("Camera", 20, 20)  # Position preview window at top-left
+    cv2.imshow("Camera", preview_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
