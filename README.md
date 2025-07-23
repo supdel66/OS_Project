@@ -19,3 +19,6 @@ connect to same wifi
 ```bash
 python idk.py --camera "http://192.168.0.104:8080/video"
 ```
+
+
+in both code and terminnal write your ipp okayy?
