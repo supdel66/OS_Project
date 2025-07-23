@@ -2,21 +2,30 @@ import cv2
 import mediapipe as mp
 import os
 import time
+import threading
 from glob import glob
 
 MEMES_DIR = "memes"
 SLIDES_DIR = "slides"
-SWITCH_DELAY = 0.1  # seconds
+SWITCH_DELAY = 0.1
 
+# Load images
 meme_imgs = sorted(glob(os.path.join(MEMES_DIR, "*.jpg")) + glob(os.path.join(MEMES_DIR, "*.png")))
 slide_imgs = sorted(glob(os.path.join(SLIDES_DIR, "*.jpg")) + glob(os.path.join(SLIDES_DIR, "*.png")))
+
 slide_idx = 0
-meme_idx = 0  # Add this line to track current meme index
+meme_idx = 0
 
 if not meme_imgs:
     raise RuntimeError("No meme images found in 'memes/' folder!")
 if not slide_imgs:
     raise RuntimeError("No slide images found in 'slides/' folder!")
+
+# Preload images
+print(f"Loading {len(meme_imgs)} memes and {len(slide_imgs)} slides...")
+meme_imgs_cv = [cv2.imread(img) for img in meme_imgs]
+slide_imgs_cv = [cv2.imread(img) for img in slide_imgs]
+print("✅ Images loaded!")
 
 cap = cv2.VideoCapture(0)
 mp_face_mesh = mp.solutions.face_mesh
@@ -32,19 +41,37 @@ def is_facing_camera(landmarks):
     eye_center = (left_eye.x + right_eye.x) / 2
     return 0.35 < eye_center < 0.65 and 0.4 < nose.x < 0.6
 
-# Preload images
-meme_imgs_cv = [cv2.imread(img) for img in meme_imgs]  # Preload all memes
-slide_imgs_cv = [cv2.imread(img) for img in slide_imgs]
+def print_status():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print("=" * 60)
+    print("🎭 FACE DETECTION PRESENTATION")
+    print("=" * 60)
+    print(f"📊 Memes: {meme_idx}/{len(meme_imgs)} | Slides: {slide_idx}/{len(slide_imgs)}")
+    print("🟢 RUNNING - Press 'q' in camera window to quit")
+    print("=" * 60)
 
 cv2.namedWindow("Display", cv2.WND_PROP_FULLSCREEN)
 cv2.setWindowProperty("Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+# Status update thread
+def status_updater():
+    while True:
+        print_status()
+        time.sleep(2)
+
+status_thread = threading.Thread(target=status_updater, daemon=True)
+status_thread.start()
+
+print_status()
 
 while True:
     ret, frame = cap.read()
     if not ret:
         continue
+
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(rgb)
+
     facing = False
     if results.multi_face_landmarks:
         for face_landmarks in results.multi_face_landmarks:
@@ -55,23 +82,23 @@ while True:
     now = time.time()
     if facing != last_state and now - last_switch > SWITCH_DELAY:
         if facing:
-            print(f"Showing MEME: {meme_imgs[meme_idx]}")
             display_img = meme_imgs_cv[meme_idx]
-            meme_idx = (meme_idx + 1) % len(meme_imgs_cv)  # Cycle to next meme
+            meme_idx = (meme_idx + 1) % len(meme_imgs_cv)
         else:
-            print(f"Showing SLIDE: {slide_imgs[slide_idx]}")
             display_img = slide_imgs_cv[slide_idx]
             slide_idx = (slide_idx + 1) % len(slide_imgs_cv)
+
         last_state = facing
         last_switch = now
 
         # Resize to fit screen if needed
-        screen_res = (1920, 1080)  # Change to your projector/screen resolution
+        screen_res = (1920, 1080)
         display_img_resized = cv2.resize(display_img, screen_res, interpolation=cv2.INTER_AREA)
         cv2.imshow("Display", display_img_resized)
 
     # Optional: show camera preview in a small window
     cv2.imshow("Camera", frame)
+
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
